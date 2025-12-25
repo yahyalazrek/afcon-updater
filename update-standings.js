@@ -14,63 +14,67 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 async function run() {
   try {
-    console.log("Fetching raw data...");
-    const url = "https://en.wikipedia.org/wiki/2025_Africa_Cup_of_Nations#Group_stage";
-    const response = await axios.get(url);
-    const htmlText = response.data.substring(0, 60000);
+    console.log("Fetching raw data from Wikipedia...");
+    
+    const url = "https://en.wikipedia.org/wiki/2025_Africa_Cup_of_Nations";
+    
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5'
+      }
+    });
+
+    const htmlText = response.data.substring(0, 500000); 
 
     console.log("Asking Gemini to parse...");
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     const prompt = `
-		You are parsing a Wikipedia page about AFCON 2025.
+      I am providing the raw HTML/Text of the AFCON 2025 Wikipedia page.
+      
+      YOUR TASK:
+      Look for the "Group stage" tables (Group A, Group B, etc.).
+      Extract the current standings into a valid JSON object.
+      
+      REQUIRED JSON STRUCTURE:
+      {
+        "last_updated": "${new Date().toISOString()}",
+        "groups": [
+           { 
+             "name": "Group A", 
+             "teams": [
+               { "rank": 1, "country": "Country Name", "points": 0, "played": 0, "gd": 0 }
+             ] 
+           },
+           ... (Repeat for Groups B, C, D, E, F)
+        ]
+      }
 
-		Extract ONLY the GROUP STAGE TABLES.
+      RULES:
+      1. If the tables are empty or populated with "0", return them as 0.
+      2. Return ONLY the raw JSON string. No Markdown formatting (no \`\`\`json).
+      3. If you absolutely cannot find the data, return an empty groups array.
 
-		Return a valid JSON object exactly in this format:
-		{
-		"last_updated": "${new Date().toISOString()}",
-		"groups": [
-			{
-			"name": "Group A",
-			"teams": [
-				{
-				"rank": 1,
-				"country": "Morocco",
-				"played": 0,
-				"won": 0,
-				"drawn": 0,
-				"lost": 0,
-				"goals_for": 0,
-				"goals_against": 0,
-				"goal_difference": 0,
-				"points": 0
-				}
-			]
-			}
-		]
-		}
-
-		Rules:
-		- Use ONLY data found in the tables
-		- If the group stage has not started, return empty groups []
-		- Do NOT add explanations
-		- Do NOT use Markdown
-		- Return RAW JSON only
-
-		Wikipedia HTML/Text:
-		${htmlText}
-		`;
+      HTML SOURCE:
+      ${htmlText}
+    `;
 
     const result = await model.generateContent(prompt);
     const text = result.response.text();
     
-    // Clean string just in case
+    // Clean string just in case Gemini adds markdown
     const jsonString = text.replace(/```json/g, "").replace(/```/g, "").trim();
-	if (!jsonString.startsWith("{")) {
-		throw new Error("Gemini returned invalid JSON");
-	}
-    const jsonData = JSON.parse(jsonString);
+    
+    // Validate JSON before uploading
+    let jsonData;
+    try {
+        jsonData = JSON.parse(jsonString);
+    } catch (e) {
+        console.error("Gemini returned invalid JSON:", jsonString);
+        throw new Error("Invalid JSON parsed");
+    }
 
     console.log("Uploading to Firebase Storage...");
     const bucket = admin.storage().bucket();
@@ -84,7 +88,8 @@ async function run() {
     console.log("Done! File updated.");
 
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Error:", error.message);
+    if (error.response) console.error("Status:", error.response.status);
     process.exit(1);
   }
 }
