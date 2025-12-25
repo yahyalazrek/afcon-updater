@@ -36,25 +36,34 @@ async function run() {
       I am providing the raw HTML/Text of the AFCON 2025 Wikipedia page.
       
       YOUR TASK:
-      Look for the "Group stage" tables.
-      Extract the current standings into a valid JSON object.
+      Extract the "Group stage" tables into a JSON object matching the EXACT structure below.
       
       REQUIRED JSON STRUCTURE:
       {
-        "last_updated": "${new Date().toISOString()}",
-        "groups": [
-           { 
-             "name": "Group A", 
-             "teams": [
-               { "rank": 1, "country": "Country Name", "points": 0, "played": 0, "gd": 0 }
-             ] 
-           }
-        ]
+          "standings": [
+              {
+                  "group": "A",
+                  "team": [
+                      {
+                          "name": "Country Name",
+                          "image": "https://flagsapi.com/XX/flat/64.png",
+                          "info": {
+                              "win": "0",
+                              "draw": "0",
+                              "lose": "0"
+                          }
+                      }
+                  ]
+              }
+              // ... Repeat for all groups found
+          ]
       }
 
-      RULES:
-      1. Return ONLY the raw JSON string. No Markdown formatting (no \`\`\`json).
-      2. If you cannot find specific data, return an empty structure or 0s.
+      CRITICAL RULES:
+      1. **Flag Images**: You must derive the 2-letter ISO Country Code for each country (e.g., Morocco = MA, Senegal = SN). Replace 'XX' in the URL 'https://flagsapi.com/XX/flat/64.png' with that code.
+      2. **Data Types**: 'win', 'draw', 'lose' must be STRINGS (e.g., "2", not 2).
+      3. **Missing Data**: If the group has not started, use "0" for stats.
+      4. **Output**: Return ONLY the raw JSON string. No Markdown (\`\`\`).
       
       HTML SOURCE:
       ${htmlText}
