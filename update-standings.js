@@ -2,12 +2,14 @@ const axios = require('axios');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const admin = require('firebase-admin');
 
-// 1. Setup Firebase
+// 1. Setup Firebase Admin
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  storageBucket: serviceAccount.project_id + ".appspot.com" 
+  credential: admin.credential.cert(serviceAccount)
 });
+
+// Initialize Firestore
+const db = admin.firestore();
 
 // 2. Setup Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -15,27 +17,26 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 async function run() {
   try {
     console.log("Fetching raw data from Wikipedia...");
-    
     const url = "https://en.wikipedia.org/wiki/2025_Africa_Cup_of_Nations";
     
     const response = await axios.get(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5'
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
       }
     });
 
     const htmlText = response.data.substring(0, 500000); 
 
     console.log("Asking Gemini to parse...");
+    
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     
     const prompt = `
       I am providing the raw HTML/Text of the AFCON 2025 Wikipedia page.
       
       YOUR TASK:
-      Look for the "Group stage" tables (Group A, Group B, etc.).
+      Look for the "Group stage" tables.
       Extract the current standings into a valid JSON object.
       
       REQUIRED JSON STRUCTURE:
@@ -47,16 +48,14 @@ async function run() {
              "teams": [
                { "rank": 1, "country": "Country Name", "points": 0, "played": 0, "gd": 0 }
              ] 
-           },
-           ... (Repeat for Groups B, C, D, E, F)
+           }
         ]
       }
 
       RULES:
-      1. If the tables are empty or populated with "0", return them as 0.
-      2. Return ONLY the raw JSON string. No Markdown formatting (no \`\`\`json).
-      3. If you absolutely cannot find the data, return an empty groups array.
-
+      1. Return ONLY the raw JSON string. No Markdown formatting (no \`\`\`json).
+      2. If you cannot find specific data, return an empty structure or 0s.
+      
       HTML SOURCE:
       ${htmlText}
     `;
@@ -64,10 +63,9 @@ async function run() {
     const result = await model.generateContent(prompt);
     const text = result.response.text();
     
-    // Clean string just in case Gemini adds markdown
+    // Clean string
     const jsonString = text.replace(/```json/g, "").replace(/```/g, "").trim();
     
-    // Validate JSON before uploading
     let jsonData;
     try {
         jsonData = JSON.parse(jsonString);
@@ -76,20 +74,14 @@ async function run() {
         throw new Error("Invalid JSON parsed");
     }
 
-    console.log("Uploading to Firebase Storage...");
-    const bucket = admin.storage().bucket();
-    const file = bucket.file('afcon_standings.json');
+    console.log("Saving to Firestore...");
     
-    await file.save(JSON.stringify(jsonData, null, 2), {
-      contentType: 'application/json',
-      metadata: { cacheControl: 'public, max-age=300' }
-    });
+    await db.collection('competitions').doc('afcon_2025').set(jsonData);
 
-    console.log("Done! File updated.");
+    console.log("Done! Firestore document updated.");
 
   } catch (error) {
     console.error("Error:", error.message);
-    if (error.response) console.error("Status:", error.response.status);
     process.exit(1);
   }
 }
