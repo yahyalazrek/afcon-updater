@@ -29,7 +29,7 @@ async function run() {
     const htmlText = response.data.substring(0, 500000); 
 
     console.log("Asking Gemini to parse...");
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     
     const prompt = `
       I am providing the raw HTML/Text of the AFCON 2025 Wikipedia page.
