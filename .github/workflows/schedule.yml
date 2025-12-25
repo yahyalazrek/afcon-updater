@@ -2,8 +2,9 @@ name: Update AFCON Standings
 
 on:
   schedule:
-    # Runs at 10:00 UTC every day.
-    - cron: '0 10 * * *'
+    # GitHub uses UTC. Morocco is UTC+1
+    # The list below corresponds to 18:00, 19:00, 21:00, and 22:00 Moroccan time
+    - cron: '0 17,18,20,21 * * *'
   workflow_dispatch: # Allows to click a button to run it manually for testing
 
 jobs:
