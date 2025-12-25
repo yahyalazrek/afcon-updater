@@ -32,6 +32,8 @@ async function run() {
     
     const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     
+	// --- TASK 1: GET STANDINGS ---
+	console.log("1. Parsing Standings...");
     const prompt = `
       I am providing the raw HTML/Text of the AFCON 2025 Wikipedia page.
       
@@ -69,25 +71,74 @@ async function run() {
       ${htmlText}
     `;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const standingsResult  = await model.generateContent(prompt);
+    const standingsText = standingsResult.response.text();
     
     // Clean string
-    const jsonString = text.replace(/```json/g, "").replace(/```/g, "").trim();
+    const standingsJsonString = standingsText.replace(/```json/g, "").replace(/```/g, "").trim();
     
-    let jsonData;
+    let standingsJson;
     try {
-        jsonData = JSON.parse(jsonString);
+        standingsJson = JSON.parse(standingsJsonString);
     } catch (e) {
-        console.error("Gemini returned invalid JSON:", jsonString);
+        console.error("Gemini returned invalid JSON:", standingsJsonString);
         throw new Error("Invalid JSON parsed");
     }
 
+	// --- TASK 2: GET GAMES ---
+    console.log("2. Parsing Games...");
+    const gamesPrompt = `
+      Using the HTML provided, extract ALL matches/games (Group stage and Knockouts if available).
+      
+      REQUIRED JSON STRUCTURE:
+      {
+          "games": [
+              {
+                  "team": [
+                      { "name": "Team A Name", "image": "https://flagsapi.com/XX/flat/64.png", "score": "1" },
+                      { "name": "Team B Name", "image": "https://flagsapi.com/YY/flat/64.png", "score": "2" }
+                  ],
+                  "info": {
+                      "date": "DD-MM-YYYY",
+                      "time": "Full time" 
+                  }
+              }
+          ]
+      }
+
+      RULES:
+      1. **Flags**: Convert country name to 2-letter ISO code (e.g. Morocco->MA, USA->US). Format: https://flagsapi.com/{ISO}/flat/64.png.
+      2. **Score**: If the game hasn't happened yet, set "score" to "-" and set "time" to the scheduled time (e.g. "20:00").
+      3. **Finished**: If game is done, set "time" to "Full time".
+      4. **Date**: Format dates as DD-MM-YYYY.
+      5. Return ONLY raw JSON.
+
+      HTML: ${htmlText}
+    `;
+
+    const gamesResult = await model.generateContent(gamesPrompt);
+    const gamesText = gamesResult.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
+    
+    let gamesJson;
+    try {
+        gamesJson = JSON.parse(gamesText);
+    } catch(e) {
+        console.error("Failed to parse Games JSON", gamesText);
+        gamesJson = { games: [] }; // Fallback
+    }
+
+    // --- TASK 3: MERGE AND SAVE ---
     console.log("Saving to Firestore...");
     
-    await db.collection('competitions').doc('afcon_2025').set(jsonData);
+    const finalData = {
+        last_updated: new Date().toISOString(),
+        standings: standingsJson.standings,
+        games: gamesJson.games
+    };
 
-    console.log("Done! Firestore document updated.");
+    await db.collection('competitions').doc('afcon_2025').set(finalData, { merge: true });
+
+    console.log("Done! Database updated with Standings and Games.");
 
   } catch (error) {
     console.error("Error:", error.message);
