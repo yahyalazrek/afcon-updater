@@ -1,0 +1,28 @@
+name: Update AFCON Standings
+
+on:
+  schedule:
+    # Runs at 10:00 UTC every day.
+    - cron: '0 10 * * *'
+  workflow_dispatch: # Allows to click a button to run it manually for testing
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies
+        run: npm install axios firebase-admin @google/generative-ai
+
+      - name: Run Update Script
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: node update-standings.js
