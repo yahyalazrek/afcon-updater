@@ -103,6 +103,7 @@ async function run() {
                       "time": "Full time" 
                   }
               }
+			  // ... Repeat for all matches found
           ]
       }
 
