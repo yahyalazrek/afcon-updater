@@ -109,7 +109,8 @@ async function run() {
       }
 
       RULES:
-      1. Flags: https://flagsapi.com/{ISO_CODE}/flat/64.png.
+      1. Flags: Convert country name to 2-letter ISO code (e.g., Morocco->MA). Format: https://flagsapi.com/{ISO}/flat/64.png. 
+         - If the team is not known yet (e.g. "Winner Group A"), set image to empty string "" and name to "Winner Group A".
       2. If game hasn't happened, score is "-" and time is HH:MM.
       3. If game is done, time is "Full time".
       4. If penalties: "1 (4)". 
@@ -133,7 +134,7 @@ async function run() {
     // --- TASK 3: GET BRACKET ---
     console.log("Waiting 60 seconds to reset API quota...");
     await sleep(60000);
-    
+
     console.log("3. Parsing Bracket...");
     const bracketPrompt = `
       Using the HTML provided, extract the Knockout Stage Bracket.
