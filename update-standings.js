@@ -14,6 +14,9 @@ const db = admin.firestore();
 // 2. Setup Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+// UTILITY: Sleep function to avoid Rate Limits (429 Errors)
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function run() {
   try {
     console.log("Fetching raw data from Wikipedia...");
@@ -82,6 +85,9 @@ async function run() {
     }
 
     // --- TASK 2: GET GAMES ---
+    console.log("Waiting 60 seconds to reset API quota...");
+    await sleep(60000);
+
     console.log("2. Parsing Games...");
     const gamesPrompt = `
       Using the HTML provided, extract ALL matches/games.
@@ -125,6 +131,9 @@ async function run() {
     }
 
     // --- TASK 3: GET BRACKET ---
+    console.log("Waiting 60 seconds to reset API quota...");
+    await sleep(60000);
+    
     console.log("3. Parsing Bracket...");
     const bracketPrompt = `
       Using the HTML provided, extract the Knockout Stage Bracket.
