@@ -31,7 +31,7 @@ async function run() {
 
     console.log("Asking Gemini to parse...");
     
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); 
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" }); 
     
     // --- TASK 1: GET STANDINGS ---
     console.log("1. Parsing Standings...");
