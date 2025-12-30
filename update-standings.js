@@ -5,24 +5,24 @@ const admin = require('firebase-admin');
 
 // Constantes
 const dateTimeSlots = [
-        "21-12-2025 20:00", "22-12-2025 15:00", "22-12-2025 18:00", "22-12-2025 21:00",
-        "23-12-2025 12:30", "23-12-2025 15:00", "23-12-2025 17:30", "23-12-2025 20:00",
-        "24-12-2025 12:30", "24-12-2025 15:00", "24-12-2025 17:30", "24-12-2025 20:00",
-        "26-12-2025 13:30", "26-12-2025 16:00", "26-12-2025 18:30", "26-12-2025 21:00",
-        "27-12-2025 12:30", "27-12-2025 15:00", "27-12-2025 17:30", "27-12-2025 20:00",
-        "28-12-2025 12:30", "28-12-2025 15:00", "28-12-2025 17:30", "28-12-2025 20:00",
-        "29-12-2025 17:00", "29-12-2025 20:00", // Last Group Games (Simultaneous)
-        "30-12-2025 16:00", "30-12-2025 19:00", // Last Group Games (Simultaneous)
-        "31-12-2025 16:00", "31-12-2025 19:00", // Last Group Games (Simultaneous)
-        "03-01-2026 17:00", "03-01-2026 20:00",
-        "04-01-2026 17:00", "04-01-2026 20:00",
-        "05-01-2026 17:00", "05-01-2026 20:00",
-        "06-01-2026 17:00", "06-01-2026 20:00",
-        "09-01-2026 17:00", "09-01-2026 21:00",
-        "10-01-2026 17:00", "10-01-2026 20:00",
-        "14-01-2026 18:00", "14-01-2026 21:00",
-        "17-01-2026 17:00", "18-01-2026 20:00"
-    ];
+    "21-12-2025 20:00", "22-12-2025 15:00", "22-12-2025 18:00", "22-12-2025 21:00",
+    "23-12-2025 12:30", "23-12-2025 15:00", "23-12-2025 17:30", "23-12-2025 20:00",
+    "24-12-2025 12:30", "24-12-2025 15:00", "24-12-2025 17:30", "24-12-2025 20:00",
+    "26-12-2025 13:30", "26-12-2025 16:00", "26-12-2025 18:30", "26-12-2025 21:00",
+    "27-12-2025 12:30", "27-12-2025 15:00", "27-12-2025 17:30", "27-12-2025 20:00",
+    "28-12-2025 12:30", "28-12-2025 15:00", "28-12-2025 17:30", "28-12-2025 20:00",
+    "29-12-2025 17:00", "29-12-2025 20:00", 
+    "30-12-2025 16:00", "30-12-2025 19:00", 
+    "31-12-2025 16:00", "31-12-2025 19:00", 
+    "03-01-2026 17:00", "03-01-2026 20:00",
+    "04-01-2026 17:00", "04-01-2026 20:00",
+    "05-01-2026 17:00", "05-01-2026 20:00",
+    "06-01-2026 17:00", "06-01-2026 20:00",
+    "09-01-2026 17:00", "09-01-2026 21:00",
+    "10-01-2026 17:00", "10-01-2026 20:00",
+    "14-01-2026 18:00", "14-01-2026 21:00",
+    "17-01-2026 17:00", "18-01-2026 20:00"
+];
 
 const countryCodes = {
     "Morocco": "MA", "Senegal": "SN", "Egypt": "EG", "Algeria": "DZ",
@@ -40,19 +40,21 @@ const countryCodes = {
 };
 
 // 1. Setup Firebase Admin
+// Ensure environment variables are set correctly
+if (!process.env.FIREBASE_SERVICE_ACCOUNT || !process.env.GEMINI_API_KEY) {
+    console.error("Missing FIREBASE_SERVICE_ACCOUNT or GEMINI_API_KEY environment variables");
+    process.exit(1);
+}
+
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
-// Initialize Firestore
 const db = admin.firestore();
 
-// 2. Setup Gemini
+// 2. Setup Gemini (FIX: Updated model name)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
-// UTILITY: Sleep function to avoid Rate Limits (429 Errors)
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function run() {
   try {
@@ -66,23 +68,10 @@ async function run() {
       }
     });
 
-    // Load HTML into Cheerio
     const $ = cheerio.load(response.data);
 
-    // Find the bracket table
-    // We filter through all tables to find the one containing the specific bracket headers
-    const bracketTable = $('table').filter((i, el) => {
-        const text = $(el).text();
-        return text.includes('Round of 16') && 
-                text.includes('Quarter-finals') && 
-                text.includes('Semi-finals');
-    });
-
-    // Get the HTML string of that table
-    const bracketData = bracketTable.prop('outerHTML');
-    console.log(bracketData);
-
     // ---- EXTRACT STANDINGS ----
+    console.log("Extracting Standings...");
     const standingsJson = { standings: [] };
     const groupNames = ['A', 'B', 'C', 'D', 'E', 'F'];
 
@@ -93,42 +82,36 @@ async function run() {
     });
 
     tables.each((index, element) => {
-        // Only process the first 6 tables (Groups A-F)
-        if (index >= 6) return;
+        if (index >= 6) return; // Only Groups A-F
 
         const table = $(element);
         const currentGroup = groupNames[index];
         
         const groupObj = {
             group: currentGroup,
-            team: [] // User requested "team" (singular) as the array key
+            team: [] 
         };
 
-        // Iterate rows, skipping the header
         table.find('tr').slice(1).each((i, row) => {
             const cols = $(row).find('th, td');
 
-            // Ensure row has enough columns
-            if (cols.length < 9) return;
+            // Need enough columns and ignore "Advance to..." separator rows
+            if (cols.length < 9 || $(row).text().includes('Advance to')) return;
 
-            // --- 1. Extract Name ---
-            // Try to find the link text, otherwise use full text and remove "(H)"
+            // Extract Name
             const teamCell = $(cols[1]);
             let teamName = teamCell.find('a').not('.image').first().text().trim();
-            if (!teamName) teamName = teamCell.text().replace('(H)', '').trim();
+            if (!teamName) teamName = teamCell.text().replace(/\(H\)/g, '').trim();
 
-            // --- 2. Extract Flag Image ---
-            // Get the src, ensure it has https prefix
+            // Extract Flag
             const code = countryCodes[teamName] || "XX";
             const flagUrl = `https://flagsapi.com/${code}/flat/64.png`;
 
-            // --- 3. Extract Info (Win/Draw/Lose) ---
-            // Based on table structure: Col 3=W, 4=D, 5=L
+            // Extract Stats (W/D/L)
             const winVal = $(cols[3]).text().trim();
             const drawVal = $(cols[4]).text().trim();
             const loseVal = $(cols[5]).text().trim();
 
-            // Build the team object
             const teamData = {
                 name: teamName,
                 image: flagUrl,
@@ -142,79 +125,61 @@ async function run() {
             groupObj.team.push(teamData);
         });
 
-        standingsData.standings.push(groupObj);
+        // FIX: Use standingsJson, not standingsData
+        standingsJson.standings.push(groupObj);
     });
 
-    // Output the standings Data
-    console.log(JSON.stringify(standingsJson, null, 4));
+    console.log(`Standings extracted: ${standingsJson.standings.length} groups.`);
 
     // ---- EXTRACT GAMES ----
+    console.log("Extracting Games...");
     const gamesJson = { "games": [] };
 
-    // Select the specific table containing match results
-    const matchTable = $('table.wikitable').filter((i, el) => {
-        const h = $(el).find('th').text();
-        return h.includes('Team 1') && h.includes('Result') && h.includes('Team 2');
-    }).first();
+    // FIX: Wikipedia uses div.footballbox for matches, not a single wikitable.
+    // We select all football boxes.
+    const matchBoxes = $('div.footballbox');
+    
+    let slotIndex = 0; 
+    let matchIndex = 0;
 
-    let matchIndex = 0; // Tracks the actual match number (0 to 51)
-    let slotIndex = 0;  // Tracks position in your dateTimeSlots array (0 to 45)
-
-    matchTable.find('tr').each((i, row) => {
-        const tds = $(row).find('td');
-        if (tds.length === 0) return; // Skip headers
-
-        // --- 1. Map Match to Time Slot ---
-        // Logic: 
-        // Matches 0-23 (First 24 games): 1 game per slot
-        // Matches 24-35 (Last 12 group games): 2 games per slot
-        // Matches 36-51 (Knockouts): 1 game per slot
+    matchBoxes.each((i, el) => {
+        const box = $(el);
         
-        // Safety check
+        // --- 1. Map Match to Time Slot (Your custom logic) ---
         if (slotIndex >= dateTimeSlots.length) slotIndex = dateTimeSlots.length - 1;
         
         const currentSlot = dateTimeSlots[slotIndex];
         const [dateStr, timeStr] = currentSlot.split(' ');
 
-        // Increment logic
+        // Increment logic based on your rules
         if (matchIndex < 24) {
-            // First 2 rounds of groups: Unique slots
             slotIndex++;
         } else if (matchIndex >= 24 && matchIndex < 36) {
-            // Last round of groups: Simultaneous (every 2 matches consume 1 slot)
-            // If matchIndex is odd (25, 27...), we move to next slot after this.
-            // If matchIndex is even (24, 26...), we stay on same slot for next iteration.
             if (matchIndex % 2 !== 0) {
                 slotIndex++;
             }
         } else {
-            // Knockouts: Unique slots again
             slotIndex++;
         }
-        
         matchIndex++;
 
-        // --- 2. Parse Wiki Data ---
-        // Adjust column offset for rowspan "Stage" column
-        let colOffset = 0;
-        if (tds.length >= 5) colOffset = 1;      
-        else if (tds.length === 4) colOffset = 0; 
-        else return; 
-
-        let t1Name = $(tds[0 + colOffset]).text().replace(/\n/g, '').trim().replace(/\[.*\]/, '');
-        let scoreText = $(tds[1 + colOffset]).text().replace(/\n/g, '').trim();
-        let t2Name = $(tds[2 + colOffset]).text().replace(/\n/g, '').trim().replace(/\[.*\]/, '');
-
+        // --- 2. Parse Data from footballbox ---
+        const t1Name = box.find('.fhome').text().replace(/\n/g, '').trim();
+        const t2Name = box.find('.faway').text().replace(/\n/g, '').trim();
+        const scoreText = box.find('.fscore').text().replace(/\n/g, '').trim();
+        
         // --- 3. Determine Scores & Status ---
         let score1 = "0";
         let score2 = "0";
-        let displayTime = timeStr; // Default to the scheduled HH:mm
+        let displayTime = timeStr; 
 
+        // Check if match has a score (e.g., "2–1")
         const scoreMatch = scoreText.match(/(\d+)[\u2013\-](\d+)/);
+        
         if (scoreMatch) {
             score1 = scoreMatch[1];
             score2 = scoreMatch[2];
-            displayTime = "Full time"; // Override time if match is finished
+            displayTime = "Full time";
         } else {
             score1 = "-";
             score2 = "-";
@@ -229,16 +194,8 @@ async function run() {
         // --- 5. Build Object ---
         gamesJson.games.push({
             "team": [
-                {
-                    "name": t1Name,
-                    "image": t1Img,
-                    "score": score1
-                },
-                {
-                    "name": t2Name,
-                    "image": t2Img,
-                    "score": score2
-                }
+                { "name": t1Name, "image": t1Img, "score": score1 },
+                { "name": t2Name, "image": t2Img, "score": score2 }
             ],
             "info": {
                 "date": dateStr,
@@ -247,74 +204,63 @@ async function run() {
         });
     });
 
-    console.log(JSON.stringify(gamesJson, null, 4));
+    console.log(`Games extracted: ${gamesJson.games.length}`);
 
-    console.log("Asking Gemini to parse...");
+    // ---- PARSE BRACKET (GEMINI) ----
+    console.log("Asking Gemini to parse Bracket...");
     
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); 
+    // Find the bracket section specifically
+    const bracketTable = $('table').filter((i, el) => {
+        const text = $(el).text();
+        return text.includes('Round of 16') && 
+               (text.includes('Quarter-finals') || text.includes('Quarterfinals'));
+    });
     
-    // --- Parse Bracket ---
-    console.log("Parsing Bracket...");
-    const bracketPrompt = `
-      Using the HTML provided, extract the Knockout Stage Bracket.
-      
-      REQUIRED JSON STRUCTURE:
-      {
-          "bracket": [
-              {
-                  "name": "Round of 16",
-                  "games": [
-                      {
-                          "team": [
-                              { "name": "Team A", "image": "https://flagsapi.com/XX/flat/64.png", "score": "1" },
-                              { "name": "Team B", "image": "https://flagsapi.com/YY/flat/64.png", "score": "2" }
-                          ]
-                      }
-                      // ... more games
-                  ]
-              },
-              {
-                  "name": "Quarter-finals",
-                  "games": []
-              },
-              {
-                  "name": "Semi-finals",
-                  "games": []
-              },
-              {
-                  "name": "Third place play-off",
-                  "games": []
-              },
-              {
-                  "name": "Final",
-                  "games": []
-              }
-          ]
-      }
+    const bracketData = bracketTable.length ? bracketTable.prop('outerHTML') : "";
+    let bracketJson = { bracket: [] };
 
-      RULES:
-      1. Structure: Follow the exact structure above.
-      2. Flags: Convert country name to 2-letter ISO code (e.g., Morocco->MA). Format: https://flagsapi.com/{ISO}/flat/64.png. 
-         - If the team is not known yet (e.g. "Winner Group A"), set image to empty string "" and name to "Winner Group A".
-      3. Scores: 
-         - If played: "3", "2".
-         - If penalties: "1 (4)". 
-         - If not played: "-".
-      4. Data extraction: Look for the visual bracket or the knockout stage schedule in the HTML.
-      5. Output: Return ONLY the raw JSON string. No Markdown.
+    if (bracketData) {
+        // FIX: Update model name
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
+        
+        const bracketPrompt = `
+          Extract the Knockout Stage Bracket from this HTML.
+          Return ONLY valid JSON.
+          
+          STRUCTURE:
+          {
+              "bracket": [
+                  {
+                      "name": "Round of 16",
+                      "games": [
+                          {
+                              "team": [
+                                  { "name": "Team A", "image": "https://flagsapi.com/XX/flat/64.png", "score": "1" },
+                                  { "name": "Team B", "image": "https://flagsapi.com/YY/flat/64.png", "score": "2" }
+                              ]
+                          }
+                      ]
+                  },
+                  // Include: Quarter-finals, Semi-finals, Third place play-off, Final
+              ]
+          }
 
-      HTML: ${bracketData}
-    `;
+          RULES:
+          1. Convert Team Names to ISO codes for the image URL (Morocco->MA, etc).
+          2. If score is unknown, use "-". If team is unknown, name="Winner Group A" and image="".
+          
+          HTML: ${bracketData}
+        `;
 
-    const bracketResult = await model.generateContent(bracketPrompt);
-    const bracketText = bracketResult.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
-
-    let bracketJson;
-    try {
-        bracketJson = JSON.parse(bracketText);
-    } catch(e) {
-        console.error("Failed to parse Bracket JSON", bracketText);
-        bracketJson = { bracket: [] };
+        try {
+            const bracketResult = await model.generateContent(bracketPrompt);
+            const bracketText = bracketResult.response.text().replace(/```json/g, "").replace(/```/g, "").trim();
+            bracketJson = JSON.parse(bracketText);
+        } catch(e) {
+            console.error("Gemini Parsing Failed:", e.message);
+        }
+    } else {
+        console.log("No bracket table found in HTML.");
     }
 
     // --- MERGE AND SAVE ---
@@ -324,15 +270,15 @@ async function run() {
         last_updated: new Date().toISOString(),
         standings: standingsJson.standings,
         games: gamesJson.games,
-        bracket: bracketJson.bracket
+        bracket: bracketJson.bracket || []
     };
 
     await db.collection('competitions').doc('afcon_2025').set(finalData, { merge: true });
 
-    console.log("Done! Database updated with Standings, Games, and Bracket.");
+    console.log("Done! Database updated.");
 
   } catch (error) {
-    console.error("Error:", error.message);
+    console.error("Fatal Error:", error);
     process.exit(1);
   }
 }
