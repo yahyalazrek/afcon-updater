@@ -4,26 +4,6 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const admin = require('firebase-admin');
 
 // Constantes
-const dateTimeSlots = [
-    "21-12-2025 20:00", "22-12-2025 15:00", "22-12-2025 18:00", "22-12-2025 21:00",
-    "23-12-2025 12:30", "23-12-2025 15:00", "23-12-2025 17:30", "23-12-2025 20:00",
-    "24-12-2025 12:30", "24-12-2025 15:00", "24-12-2025 17:30", "24-12-2025 20:00",
-    "26-12-2025 13:30", "26-12-2025 16:00", "26-12-2025 18:30", "26-12-2025 21:00",
-    "27-12-2025 12:30", "27-12-2025 15:00", "27-12-2025 17:30", "27-12-2025 20:00",
-    "28-12-2025 12:30", "28-12-2025 15:00", "28-12-2025 17:30", "28-12-2025 20:00",
-    "29-12-2025 17:00", "29-12-2025 20:00", 
-    "30-12-2025 16:00", "30-12-2025 19:00", 
-    "31-12-2025 16:00", "31-12-2025 19:00", 
-    "03-01-2026 17:00", "03-01-2026 20:00",
-    "04-01-2026 17:00", "04-01-2026 20:00",
-    "05-01-2026 17:00", "05-01-2026 20:00",
-    "06-01-2026 17:00", "06-01-2026 20:00",
-    "09-01-2026 17:00", "09-01-2026 21:00",
-    "10-01-2026 17:00", "10-01-2026 20:00",
-    "14-01-2026 18:00", "14-01-2026 21:00",
-    "17-01-2026 17:00", "18-01-2026 20:00"
-];
-
 const countryCodes = {
     "Morocco": "MA", "Senegal": "SN", "Egypt": "EG", "Algeria": "DZ",
     "Nigeria": "NG", "Mali": "ML", "Ivory Coast": "CI", "Côte d'Ivoire": "CI",
@@ -70,12 +50,10 @@ async function run() {
 
     const $ = cheerio.load(response.data);
 
-    // ---- EXTRACT STANDINGS ----
     console.log("Extracting Standings...");
     const standingsJson = { standings: [] };
     const groupNames = ['A', 'B', 'C', 'D', 'E', 'F'];
 
-    // Find valid standings tables
     const tables = $('table.wikitable').filter((i, el) => {
         const txt = $(el).text();
         return txt.includes('Pos') && txt.includes('Team') && txt.includes('Pts');
@@ -92,22 +70,29 @@ async function run() {
             team: [] 
         };
 
+        // .slice(1) skips the Header row.
         table.find('tr').slice(1).each((i, row) => {
             const cols = $(row).find('th, td');
 
-            // Need enough columns and ignore "Advance to..." separator rows
-            if (cols.length < 9 || $(row).text().includes('Advance to')) return;
+            // We only check if there are enough columns to be a valid team row.
+            // Some rows might be "separator" rows, but they usually have fewer columns or are hidden.
+            if (cols.length < 8) return; 
 
             // Extract Name
+            // In some tables Col 0 is Pos, Col 1 is Team.
             const teamCell = $(cols[1]);
             let teamName = teamCell.find('a').not('.image').first().text().trim();
-            if (!teamName) teamName = teamCell.text().replace(/\(H\)/g, '').trim();
+            
+            // Fallback if no link found (e.g. host country sometimes)
+            if (!teamName) teamName = teamCell.text().replace(/\(H\)/g, '').replace(/\(.*\)/, '').trim();
+
+            if (!teamName) return; // Skip if no name found
 
             // Extract Flag
             const code = countryCodes[teamName] || "XX";
             const flagUrl = `https://flagsapi.com/${code}/flat/64.png`;
 
-            // Extract Stats (W/D/L)
+            // Extract Stats (W/D/L) - Standard Wiki: Pos, Team, Pld, W, D, L
             const winVal = $(cols[3]).text().trim();
             const drawVal = $(cols[4]).text().trim();
             const loseVal = $(cols[5]).text().trim();
@@ -125,7 +110,6 @@ async function run() {
             groupObj.team.push(teamData);
         });
 
-        // FIX: Use standingsJson, not standingsData
         standingsJson.standings.push(groupObj);
     });
 
@@ -135,63 +119,77 @@ async function run() {
     console.log("Extracting Games...");
     const gamesJson = { "games": [] };
 
-    // FIX: Wikipedia uses div.footballbox for matches, not a single wikitable.
-    // We select all football boxes.
     const matchBoxes = $('div.footballbox');
     
-    let slotIndex = 0; 
-    let matchIndex = 0;
+    // Helper to format Wikipedia dates (e.g. "21 December 2025" -> "21-12-2025")
+    const monthMap = {
+        "January": "01", "February": "02", "March": "03", "April": "04", 
+        "May": "05", "June": "06", "July": "07", "August": "08", 
+        "September": "09", "October": "10", "November": "11", "December": "12"
+    };
+
+    const parseWikiDate = (rawDate) => {
+        if (!rawDate) return "";
+        // Clean up the string (remove non-breaking spaces, newlines)
+        const cleanDate = rawDate.replace(/(\r\n|\n|\r)/gm, "").trim();
+        const parts = cleanDate.split(' '); 
+        
+        // Expected format: "21" "December" "2025"
+        if (parts.length < 3) return cleanDate;
+
+        let day = parts[0].replace(/\D/g, ''); // Remove "st", "nd" if present
+        if (day.length === 1) day = "0" + day;
+
+        const monthName = parts[1];
+        // Find month number (handles "Dec" or "December")
+        let month = Object.keys(monthMap).find(m => m.startsWith(monthName)) 
+                    ? monthMap[Object.keys(monthMap).find(m => m.startsWith(monthName))] 
+                    : "00";
+
+        const year = parts[2];
+        return `${day}-${month}-${year}`;
+    };
 
     matchBoxes.each((i, el) => {
         const box = $(el);
         
-        // --- 1. Map Match to Time Slot (Your custom logic) ---
-        if (slotIndex >= dateTimeSlots.length) slotIndex = dateTimeSlots.length - 1;
+        // --- 1. Scrape Date & Time Directly ---
+        const dateRaw = box.find('.fdate').text();
+        const timeRaw = box.find('.ftime').text();
         
-        const currentSlot = dateTimeSlots[slotIndex];
-        const [dateStr, timeStr] = currentSlot.split(' ');
+        // Convert to your desired format
+        const dateStr = parseWikiDate(dateRaw);
+        
+        // Use the scraped time (e.g. "20:00") or default if missing
+        let displayTime = timeRaw ? timeRaw.trim() : "00:00";
 
-        // Increment logic based on your rules
-        if (matchIndex < 24) {
-            slotIndex++;
-        } else if (matchIndex >= 24 && matchIndex < 36) {
-            if (matchIndex % 2 !== 0) {
-                slotIndex++;
-            }
-        } else {
-            slotIndex++;
-        }
-        matchIndex++;
-
-        // --- 2. Parse Data from footballbox ---
+        // --- 2. Parse Teams & Scores ---
         const t1Name = box.find('.fhome').text().replace(/\n/g, '').trim();
         const t2Name = box.find('.faway').text().replace(/\n/g, '').trim();
         const scoreText = box.find('.fscore').text().replace(/\n/g, '').trim();
         
-        // --- 3. Determine Scores & Status ---
         let score1 = "0";
         let score2 = "0";
-        let displayTime = timeStr; 
 
-        // Check if match has a score (e.g., "2–1")
+        // Check if match has a score (e.g., "2–1" or "2-1")
         const scoreMatch = scoreText.match(/(\d+)[\u2013\-](\d+)/);
         
         if (scoreMatch) {
             score1 = scoreMatch[1];
             score2 = scoreMatch[2];
-            displayTime = "Full time";
+            displayTime = "Full time"; 
         } else {
             score1 = "-";
             score2 = "-";
         }
 
-        // --- 4. Get Images ---
+        // --- 3. Get Images ---
         const t1Code = countryCodes[t1Name] || "XX";
         const t2Code = countryCodes[t2Name] || "XX";
         const t1Img = t1Code !== "XX" ? `https://flagsapi.com/${t1Code}/flat/64.png` : "";
         const t2Img = t2Code !== "XX" ? `https://flagsapi.com/${t2Code}/flat/64.png` : "";
 
-        // --- 5. Build Object ---
+        // --- 4. Push to Array ---
         gamesJson.games.push({
             "team": [
                 { "name": t1Name, "image": t1Img, "score": score1 },
