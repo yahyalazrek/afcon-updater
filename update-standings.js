@@ -221,7 +221,7 @@ async function run() {
 
     if (bracketData) {
         // FIX: Update model name
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" }); 
+        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" }); 
         
         const bracketPrompt = `
           Extract the Knockout Stage Bracket from this HTML.
