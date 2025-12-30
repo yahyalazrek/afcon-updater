@@ -130,23 +130,25 @@ async function run() {
 
     const parseWikiDate = (rawDate) => {
         if (!rawDate) return "";
-        // Clean up the string (remove non-breaking spaces, newlines)
-        const cleanDate = rawDate.replace(/(\r\n|\n|\r)/gm, "").trim();
-        const parts = cleanDate.split(' '); 
         
-        // Expected format: "21" "December" "2025"
-        if (parts.length < 3) return cleanDate;
+        // Regex to find: Digits + Space + Word + Space + 4 Digits
+        // Example: Matches "30 December 2025" inside "30 December 2025 (2025-12-30)"
+        const match = rawDate.match(/(\d+)\s+([a-zA-Z]+)\s+(\d{4})/);
 
-        let day = parts[0].replace(/\D/g, ''); // Remove "st", "nd" if present
+        if (!match) return rawDate.trim(); // Fallback if format is weird
+
+        let day = match[1];
+        const monthName = match[2];
+        const year = match[3];
+
+        // Ensure day is 2 digits (e.g., "5" -> "05")
         if (day.length === 1) day = "0" + day;
 
-        const monthName = parts[1];
-        // Find month number (handles "Dec" or "December")
+        // Convert month name to number
         let month = Object.keys(monthMap).find(m => m.startsWith(monthName)) 
                     ? monthMap[Object.keys(monthMap).find(m => m.startsWith(monthName))] 
                     : "00";
 
-        const year = parts[2];
         return `${day}-${month}-${year}`;
     };
 
@@ -200,6 +202,19 @@ async function run() {
                 "time": displayTime
             }
         });
+    });
+
+    // --- 5. Sort Chronologically (Optional but recommended) ---
+    // Since Wiki groups matches by Group (A, B, C...), the dates will be mixed.
+    // This sort ensures the output is ordered by date.
+    gamesJson.games.sort((a, b) => {
+        const [d1, m1, y1] = a.info.date.split('-');
+        const [d2, m2, y2] = b.info.date.split('-');
+        
+        const dateA = new Date(`${y1}-${m1}-${d1}T${a.info.time}:00`);
+        const dateB = new Date(`${y2}-${m2}-${d2}T${b.info.time}:00`);
+        
+        return dateA - dateB;
     });
 
     console.log(`Games extracted: ${gamesJson.games.length}`);
