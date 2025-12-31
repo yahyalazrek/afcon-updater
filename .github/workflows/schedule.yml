@@ -3,10 +3,7 @@ name: Update AFCON Standings
 on:
   schedule:
     # Morocco is UTC+1.
-    # Match times range from 12:30 to 21:00 local time.
-    # This schedule runs every 30 minutes from 11:00 UTC (12:00 Morocco) to 22:00 UTC (23:00 Morocco)
-    # to ensure all match results are captured.
-    - cron: '0,30 11-22 * * *'
+    - cron: '30 18,21 * * *'
   workflow_dispatch: # Allows you to run it manually
 
 jobs:
