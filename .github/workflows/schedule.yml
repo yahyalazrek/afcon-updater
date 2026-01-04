@@ -3,7 +3,7 @@ name: Update AFCON Standings
 on:
   schedule:
     # Morocco is UTC+1.
-    - cron: '30 18,21 * * *'
+    - cron: '30 18,21,22, * * *'
   workflow_dispatch: # Allows you to run it manually
 
 jobs:
